@@ -345,6 +345,8 @@ async function loadManifest(url) {
     return MANIFEST;
   } catch (e) {
     console.warn('Failed to load manifest; using fallback threshold', e);
+    const el = document.getElementById('uncertainLegendValue');
+    if (el) el.textContent = UNCERTAIN_THRESHOLD.toFixed(2);
     return null;
   }
 }
