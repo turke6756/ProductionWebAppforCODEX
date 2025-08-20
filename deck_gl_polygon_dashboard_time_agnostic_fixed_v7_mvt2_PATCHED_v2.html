@@ -218,8 +218,9 @@ const CONFIG = {
   attrsBaseUrl: "./",            // e.g., "./attrs/" if you move season files into a folder
   streaksUrl: "./streaks.json",  // reserved for later; not used in this minimal pass
 
-  // GeoJSON polygons / centroids (unchanged)
-  centroidsUrl: "./FresnoAlmondOrchards.geojson",
+  // GeoJSON polygons / centroids (optional; set to null when not available)
+  // Used for viewport-based stats or non-PMTiles workflows
+  centroidsUrl: null, // "./FresnoAlmondOrchards.geojson",
 
   // PMTiles (Step 2)
   tilesUrl: "./orchards.pmtiles",
@@ -257,18 +258,18 @@ function hexToRgb(hex) {
 // Missing functions for viewport stats
 function isViewportStatsEnabled() {
   const chkVS = document.getElementById('chkViewportStats');
-  return chkVS && chkVS.checked;
+  return chkVS && chkVS.checked && centroidsById.size > 0;
 }
 
 function featureInCurrentView(feature) {
-  if (!map || !feature) return true;
-  
+  if (!map || !feature || centroidsById.size === 0) return true;
+
   // Get current map bounds
   const bounds = map.getBounds();
   const coords = centroidsById.get(feature.orch_id);
-  
+
   if (!coords) return true; // If no coordinates, include by default
-  
+
   const [lng, lat] = coords;
   return bounds.contains([lng, lat]);
 }
@@ -304,7 +305,7 @@ function initMap() {
   if (chkVS) {
     const onMoveEnd = () => updateStatsFromRows();
     chkVS.addEventListener('change', () => {
-      if (chkVS.checked) { map.on('moveend', onMoveEnd); }
+      if (chkVS.checked && centroidsById.size > 0) { map.on('moveend', onMoveEnd); }
       else { map.off('moveend', onMoveEnd); }
       updateLayers();
     });
@@ -323,6 +324,9 @@ async function loadCSVFromUrl(url) {
 
 async function loadGeoJSONFromUrl(url) {
   const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch ${url}: ${resp.status} ${resp.statusText}`);
+  }
   return await resp.json();
 }
 
@@ -1216,8 +1220,12 @@ initMap();
   try {
     // Load polygons/centroids first
     if (CONFIG.centroidsUrl) {
-      const gj = await loadGeoJSONFromUrl(CONFIG.centroidsUrl);
-      indexCentroids(gj);
+      try {
+        const gj = await loadGeoJSONFromUrl(CONFIG.centroidsUrl);
+        indexCentroids(gj);
+      } catch (err) {
+        console.warn('Centroid GeoJSON not loaded:', err);
+      }
     }
 
     if (CONFIG.dataMode === 'json') {
