@@ -1182,6 +1182,15 @@ function makePMTilesLayer() {
     minZoom: 6, maxZoom: 16,
     pickable: true,
     onDataLoad: (tj) => console.log('TileJSON loaded:', tj),
+    onClick: info => {
+      const f = info && info.object;
+      if (!f) return;
+      const orchId = f.properties?.orch_id ?? f.properties?.ORCH_ID ?? f.properties?.id;
+      const row = pickRow(orchId, getFilters().seasonSort) || { orch_id: orchId, hasMissingData: true };
+      selectedOrchardId = String(orchId);
+      showDetails(row);
+      updateLayers();
+    },
 
     renderSubLayers: (sub) => {
       const features = sub.data || [];
@@ -1209,15 +1218,6 @@ function makePMTilesLayer() {
           const orchId = f.properties?.orch_id ?? f.properties?.ORCH_ID ?? f.properties?.id;
           const row = pickRow(orchId, seasonSort);
           return fillFromRow(row);
-        },
-        onClick: info => {
-          const f = info && info.object;
-          if (!f) return;
-          const orchId = f.properties?.orch_id ?? f.properties?.ORCH_ID ?? f.properties?.id;
-          const row = pickRow(orchId, getFilters().seasonSort) || { orch_id: orchId, hasMissingData: true };
-          selectedOrchardId = String(orchId);
-          showDetails(row);
-          updateLayers();
         },
         updateTriggers: {
           getFillColor: [seasonSort, showYoung, showMid, onlyFlip, typeof UNCERTAIN_THRESHOLD !== 'undefined' ? UNCERTAIN_THRESHOLD : 0],
