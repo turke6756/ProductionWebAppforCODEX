@@ -288,7 +288,11 @@ function initMap() {
   map.addControl(overlay);
   // Map controls
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-  map.on('moveend', () => { if (isViewportStatsEnabled()) { updateStatsFromRows(); } });
+  map.on('moveend', () => {
+    if (isViewportStatsEnabled() && typeof updateStatsFromRows === 'function') {
+      updateStatsFromRows();
+    }
+  });
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'imperial' }), 'bottom-left');
 
   // Basemap selector wiring
@@ -304,7 +308,11 @@ function initMap() {
   // Viewport-aware KPI toggle
   const chkVS = document.getElementById('chkViewportStats');
   if (chkVS) {
-    const onMoveEnd = () => updateStatsFromRows();
+    const onMoveEnd = () => {
+      if (typeof updateStatsFromRows === 'function') {
+        updateStatsFromRows();
+      }
+    };
     chkVS.addEventListener('change', () => {
       if (chkVS.checked && centroidsById.size > 0) { map.on('moveend', onMoveEnd); }
       else { map.off('moveend', onMoveEnd); }
@@ -1022,7 +1030,9 @@ function onUIChange() {
     updateSeasonLabels();
   }
   updateLayers();
-  updateStatsFromRows();
+  if (typeof updateStatsFromRows === 'function') {
+    updateStatsFromRows();
+  }
   if (selectedOrchardId !== null) {
     const { seasonSort } = getFilters();
     const arr = rowsByOrch.get(String(selectedOrchardId));
@@ -1281,7 +1291,10 @@ console.log('Loaded rows count:', rows?.length ?? 0);
     const el = document.getElementById('uncertainLegendValue');
     if (el) el.textContent = Number(UNCERTAIN_THRESHOLD).toFixed(2);
 
-    updateLayers(); updateStatsFromRows();
+    updateLayers();
+    if (typeof updateStatsFromRows === 'function') {
+      updateStatsFromRows();
+    }
   } catch (err) {
     console.error(err);
   }
