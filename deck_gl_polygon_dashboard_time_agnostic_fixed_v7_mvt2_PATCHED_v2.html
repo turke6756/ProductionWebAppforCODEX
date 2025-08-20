@@ -1285,6 +1285,7 @@ console.log('Loaded rows count:', rows?.length ?? 0);
   } catch (err) {
     console.error(err);
   }
+})();
 
 // Lightweight stats recompute based only on attribute rows + centroids/areas (no polygon geometry needed)
 function updateStatsFromRows() {
@@ -1346,7 +1347,7 @@ function updateStatsFromRows() {
   }
 }
 
-})();</script>
+</script>
 
 
 </body>
