@@ -216,7 +216,7 @@ const CONFIG = {
   // JSON (production-style)
   manifestUrl: "./manifest.json",
   attrsBaseUrl: "./",            // e.g., "./attrs/" if you move season files into a folder
-  streaksUrl: "./streaks.json",  // reserved for later; not used in this minimal pass
+  streaksUrl: "./streaks.json",
 
   // GeoJSON polygons / centroids (optional; set to null when not available)
   // Used for viewport-based stats or non-PMTiles workflows
@@ -248,7 +248,8 @@ let selectedOrchardId = null;    // currently selected orchard for highlighting
 
 // Time-agnostic mode state
 let isTimeAgnostic = false;      // whether we're in time-agnostic mode
-let orchardPatterns = new Map(); // orch_id -> pattern analysis across all seasons
+let orchardPatterns = new Map(); // orch_id -> pattern analysis across all seasons (fallback)
+let streaksData = null;          // precomputed streak metrics loaded from streaks.json
 
 // Utility: parse HEX -> [r,g,b]
 function hexToRgb(hex) {
@@ -512,6 +513,35 @@ function calculatePolygonArea(coordinates) {
 // Time-agnostic analysis functions
 // ============================
 
+function hasEverCover(orchId) {
+  if (streaksData) {
+    return streaksData[orchId]?.ever_cover || false;
+  }
+  const pattern = orchardPatterns.get(orchId);
+  return pattern?.everCoverCropped || false;
+}
+
+function hasConsecutiveYears(orchId, minConsecutive) {
+  if (streaksData) {
+    return (streaksData[orchId]?.longest || 0) >= minConsecutive;
+  }
+  const pattern = orchardPatterns.get(orchId);
+  return (pattern?.maxConsecutiveCovers || 0) >= minConsecutive;
+}
+
+function wasActiveInYear(orchId, year) {
+  if (streaksData) {
+    const mask = streaksData[orchId]?.mask || 0;
+    const yearIndex = year - 2018; // 2018=bit0
+    return (mask & (1 << yearIndex)) !== 0;
+  }
+  const rows = rowsByOrch.get(String(orchId));
+  if (!rows) return false;
+  const row = rows.find(r => r.season_sort === year);
+  const confidence = Number(row?.best_soft_norm || 0);
+  return confidence > UNCERTAIN_THRESHOLD && row?.cluster_role === 'Cover Crops';
+}
+
 function analyzeOrchardPatterns() {
   // Analyze each orchard's cover crop patterns across all seasons
   orchardPatterns.clear();
@@ -583,28 +613,45 @@ function getTimeAgnosticFilters() {
   };
 }
 
+function getStratum(orchardId) {
+  const rows = rowsByOrch.get(String(orchardId));
+  return rows && rows[0]?.stratum || 'Unknown';
+}
+
+
 function filterOrchardsByPattern(orchardId) {
   if (!isTimeAgnostic) return true;
-  
-  const pattern = orchardPatterns.get(orchardId);
-  if (!pattern) return false;
-  
+
   const filters = getTimeAgnosticFilters();
-  
-  // If no filters are selected, show all orchards
   const anyFilterSelected = Object.values(filters).some(f => f);
   if (!anyFilterSelected) return true;
-  
-  // Check if orchard matches any selected filter
+
+  if (streaksData) {
+    const data = streaksData[orchardId];
+    if (!data) return false;
+    return (
+      (filters.coverOnce && hasEverCover(orchardId)) ||
+      (filters.neverCover && data.never_cover) ||
+      (filters.cover2 && hasConsecutiveYears(orchardId, 2)) ||
+      (filters.cover3 && hasConsecutiveYears(orchardId, 3)) ||
+      (filters.cover4 && hasConsecutiveYears(orchardId, 4)) ||
+      (filters.cover5 && hasConsecutiveYears(orchardId, 5)) ||
+      (filters.cover6 && hasConsecutiveYears(orchardId, 6)) ||
+      (filters.cover7 && hasConsecutiveYears(orchardId, 7))
+    );
+  }
+
+  const pattern = orchardPatterns.get(orchardId);
+  if (!pattern) return false;
   return (
-    (filters.coverOnce && pattern.everCoverCropped) ||
+    (filters.coverOnce && hasEverCover(orchardId)) ||
     (filters.neverCover && pattern.neverCoverCropped) ||
-    (filters.cover2 && pattern.consecutiveStreak2Plus) ||
-    (filters.cover3 && pattern.consecutiveStreak3Plus) ||
-    (filters.cover4 && pattern.consecutiveStreak4Plus) ||
-    (filters.cover5 && pattern.consecutiveStreak5Plus) ||
-    (filters.cover6 && pattern.consecutiveStreak6Plus) ||
-    (filters.cover7 && pattern.consecutiveStreak7Plus)
+    (filters.cover2 && hasConsecutiveYears(orchardId, 2)) ||
+    (filters.cover3 && hasConsecutiveYears(orchardId, 3)) ||
+    (filters.cover4 && hasConsecutiveYears(orchardId, 4)) ||
+    (filters.cover5 && hasConsecutiveYears(orchardId, 5)) ||
+    (filters.cover6 && hasConsecutiveYears(orchardId, 6)) ||
+    (filters.cover7 && hasConsecutiveYears(orchardId, 7))
   );
 }
 
@@ -643,9 +690,6 @@ function preprocessCSV(rows) {
     rowsByOrch.get(r.orch_id).push(r);
   }
   for (const [id, arr] of rowsByOrch) arr.sort((a,b)=>a.season_sort - b.season_sort);
-
-  // Analyze patterns for time-agnostic mode
-  analyzeOrchardPatterns();
 
   // Set slider domain
   const slider = document.getElementById('seasonSlider');
@@ -765,40 +809,53 @@ function makeTimeSpecificLayer() {
 
 function makeTimeAgnosticLayer() {
   const { showYoung, showMid } = getFilters();
-  
-  // Get all orchards with polygons that match pattern filters
+
   const allOrchardsWithPolygons = [];
   for (const orchId of polygonsById.keys()) {
     const polygonCoords = polygonsById.get(orchId);
-    const pattern = orchardPatterns.get(orchId);
-    
-    if (pattern && filterOrchardsByPattern(orchId)) {
-      // Check stratum filters
-      if ((showYoung && pattern.stratum === 'Young') || (showMid && pattern.stratum === 'Old')) {
-        // Create representative data object for display
-        const representativeData = {
-          orch_id: orchId,
-          polygon: polygonCoords,
-          hasMissingData: false,
-          cluster_role: pattern.everCoverCropped ? 'Cover Crops' : 'Bare Soil',
-          cluster_role_color: pattern.everCoverCropped ? '#2ca25f' : '#8B4513',
-          colorRGB: pattern.everCoverCropped ? [44, 162, 95] : [139, 69, 19],
-          alpha: 0.8,
-          best_soft_norm: pattern.everCoverCropped ? 0.8 : 0.2,
-          confidence: 0.9,
-          stratum: pattern.stratum,
-          season: 'Time-Agnostic',
-          flipped_this_season: false,
-          maxConsecutiveCovers: pattern.maxConsecutiveCovers,
-          patternData: pattern
-        };
-        allOrchardsWithPolygons.push(representativeData);
-      }
+    if (!filterOrchardsByPattern(orchId)) continue;
+
+    const stratum = getStratum(orchId);
+    if (!((showYoung && stratum === 'Young') || (showMid && stratum === 'Old'))) continue;
+
+    let everCover = false;
+    let longest = 0;
+    if (streaksData) {
+      const s = streaksData[orchId];
+      if (!s) continue;
+      everCover = s.ever_cover;
+      longest = s.longest || 0;
+    } else {
+      const pattern = orchardPatterns.get(orchId);
+      if (!pattern) continue;
+      everCover = pattern.everCoverCropped;
+      longest = pattern.maxConsecutiveCovers;
     }
+
+    const representativeData = {
+      orch_id: orchId,
+      polygon: polygonCoords,
+      hasMissingData: false,
+      cluster_role: everCover ? 'Cover Crops' : 'Bare Soil',
+      cluster_role_color: everCover ? '#2ca25f' : '#8B4513',
+      colorRGB: everCover ? [44, 162, 95] : [139, 69, 19],
+      alpha: 0.8,
+      best_soft_norm: everCover ? 0.8 : 0.2,
+      confidence: 0.9,
+      stratum,
+      season: 'Time-Agnostic',
+      flipped_this_season: false,
+      maxConsecutiveCovers: longest,
+      patternData: {
+        stratum,
+        everCoverCropped: everCover,
+        maxConsecutiveCovers: longest,
+        seasons: rowsByOrch.get(String(orchId))?.length || 0
+      }
+    };
+    allOrchardsWithPolygons.push(representativeData);
   }
 
-  // Don't update stats in time-agnostic mode (they should only reflect time slider)
-  
   return createPolygonLayer(allOrchardsWithPolygons);
 }
 
@@ -1285,6 +1342,20 @@ console.log('Loaded rows count:', rows?.length ?? 0);
         const rows = await loadCSVFromUrl(CONFIG.csvUrl);
         preprocessCSV(rows);
       }
+    }
+
+    // Load precomputed streak data for time-agnostic mode
+    let streaksLoaded = false;
+    if (CONFIG.streaksUrl) {
+      try {
+        streaksData = await fetch(CONFIG.streaksUrl).then(r => r.json());
+        streaksLoaded = true;
+      } catch (e) {
+        console.warn('Failed to load streaks data:', e);
+      }
+    }
+    if (!streaksLoaded) {
+      analyzeOrchardPatterns(); // fallback to client-side analysis
     }
 
     // Update legend number in case manifest arrived after DOM painted
