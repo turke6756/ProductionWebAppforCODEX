@@ -997,11 +997,22 @@ function toggleTimeAgnosticMode() {
 // ============================
 // Event wiring
 // ============================
-function onUIChange() { 
+function onUIChange() {
   if (!isTimeAgnostic) {
-    updateSeasonLabels(); 
+    updateSeasonLabels();
   }
-  updateLayers(); 
+  updateLayers();
+  updateStatsFromRows();
+  if (selectedOrchardId !== null) {
+    const { seasonSort } = getFilters();
+    const arr = rowsByOrch.get(String(selectedOrchardId));
+    const row = Array.isArray(arr) ? arr.find(r => r.season_sort === seasonSort) : null;
+    if (row) {
+      showDetails(row);
+    } else {
+      showDetails({ orch_id: selectedOrchardId, hasMissingData: true });
+    }
+  }
 }
 
 function onTimeAgnosticFilterChange() {
