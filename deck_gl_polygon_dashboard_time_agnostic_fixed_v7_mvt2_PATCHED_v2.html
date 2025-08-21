@@ -223,7 +223,7 @@ const CONFIG = {
   centroidsUrl: null, // "./FresnoAlmondOrchards.geojson",
 
   // PMTiles (Step 2)
-  tilesUrl: "./orchards.pmtiles",
+  tilesUrl: "./enhanced_orchards_with_acres.pmtiles",
 
   // Initial map view (adjust to your AOI)
   initialView: { center: [-120.5, 36.5], zoom: 7.3 },
@@ -523,11 +523,17 @@ function indexFeaturesFromTile(features = []) {
 
     // Area for acreage stats
     if (!areaById.has(orchId)) {
-      let area = 0;
-      if (f.geometry?.type === 'Polygon') area = calculatePolygonArea(f.geometry.coordinates);
-      else if (f.geometry?.type === 'MultiPolygon') {
-        for (const poly of f.geometry.coordinates) area += calculatePolygonArea(poly);
+      // First try to use the 'acres' property from PMTiles
+      let area = f.properties?.acres ? Number(f.properties.acres) : 0;
+      
+      // Fallback to geodesic calculation if no acres property
+      if (area <= 0) {
+        if (f.geometry?.type === 'Polygon') area = calculatePolygonArea(f.geometry.coordinates);
+        else if (f.geometry?.type === 'MultiPolygon') {
+          for (const poly of f.geometry.coordinates) area += calculatePolygonArea(poly);
+        }
       }
+      
       if (area > 0) {
         areaById.set(orchId, area);
         const rows = rowsByOrch.get(orchId);
@@ -907,6 +913,7 @@ function makeTimeAgnosticLayer() {
   const layer = new deck.MVTLayer({
     id: `orchards-mvt-time-agnostic-${filtersHash}`,
     data: pmtilesUrl,
+    sourceLayer: 'orchards',
     uniqueIdProperty: 'orch_id',
     binary: false,
     minZoom: 6, maxZoom: 16,
@@ -916,8 +923,7 @@ function makeTimeAgnosticLayer() {
       console.log('📍 Current zoom:', map.getZoom(), 'Center:', map.getCenter());
     },
     onTileLoad: (tile) => {
-      console.log('🧩 Time-agnostic tile loaded:', tile.index, 'features:', tile.data?.features?.length || 0);
-      indexFeaturesFromTile(tile.data?.features || []);
+      indexFeaturesFromTile(tile.data || []);
     },
     onTileError: (error) => {
       console.error('❌ Time-agnostic tile error:', error);
@@ -1373,25 +1379,33 @@ function makePMTilesLayer() {
     return true;
   }
   function fillFromRow(row) {
-    // Always use the cluster color (green / gray / brown), modulate alpha by confidence
     if (!row) return [255, 68, 68, 160]; // missing -> soft red
-    const rgb = hexToRgb(row.cluster_role_color || '#808080') || {r:128,g:128,b:128};
+    
     const conf = Number(row.best_soft_norm) || 0;
+    
+    // Use gray for uncertain orchards (≤15% confidence)
+    if (conf <= UNCERTAIN_THRESHOLD) {
+      const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 3))); // Scale uncertain opacity
+      return [80, 80, 80, alpha]; // Gray for uncertain
+    }
+    
+    // Use cluster color for confident classifications (green/brown)
+    const rgb = hexToRgb(row.cluster_role_color || '#808080') || [128, 128, 128];
     const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 1.15)));
-    return [rgb.r, rgb.g, rgb.b, alpha];
+    return [rgb[0], rgb[1], rgb[2], alpha];
   }
 
   const layer = new deck.MVTLayer({
     id: 'orchards-mvt',
     data: pmtilesUrl,
+    sourceLayer: 'orchards',
     uniqueIdProperty: 'orch_id',
     binary: false,
     minZoom: 6, maxZoom: 16,
     pickable: true,
     onDataLoad: (tj) => console.log('TileJSON loaded:', tj),
     onTileLoad: (tile) => {
-      console.log('🧩 PMTiles tile loaded:', tile.index, 'features:', tile.data?.features?.length || 0);
-      indexFeaturesFromTile(tile.data?.features || []);
+      indexFeaturesFromTile(tile.data || []);
     },
     onClick: info => {
       const f = info && info.object;
