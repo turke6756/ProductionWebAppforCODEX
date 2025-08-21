@@ -1380,21 +1380,6 @@ function makePMTilesLayer() {
   }
   function fillFromRow(row) {
     if (!row) return [255, 68, 68, 160]; // missing -> soft red
-<<<<<<< HEAD
-    
-    const conf = Number(row.best_soft_norm) || 0;
-    
-    // Use gray for uncertain orchards (≤15% confidence)
-    if (conf <= UNCERTAIN_THRESHOLD) {
-      const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 3))); // Scale uncertain opacity
-      return [80, 80, 80, alpha]; // Gray for uncertain
-    }
-    
-    // Use cluster color for confident classifications (green/brown)
-    const rgb = hexToRgb(row.cluster_role_color || '#808080') || [128, 128, 128];
-    const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 1.15)));
-    return [rgb[0], rgb[1], rgb[2], alpha];
-=======
     const conf = Number(row.best_soft_norm) || 0;
     // Uncertain classifications get gray fill
     if (conf <= UNCERTAIN_THRESHOLD) {
@@ -1404,7 +1389,6 @@ function makePMTilesLayer() {
     const [r, g, b] = hexToRgb(row.cluster_role_color || '#808080');
     const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 1.15)));
     return [r, g, b, alpha];
->>>>>>> origin/main
   }
 
   const layer = new deck.MVTLayer({
