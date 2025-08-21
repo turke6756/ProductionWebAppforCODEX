@@ -223,7 +223,7 @@ const CONFIG = {
   centroidsUrl: null, // "./FresnoAlmondOrchards.geojson",
 
   // PMTiles (Step 2)
-  tilesUrl: "./orchards.pmtiles",
+  tilesUrl: "./enhanced_orchards_with_acres.pmtiles",
 
   // Initial map view (adjust to your AOI)
   initialView: { center: [-120.5, 36.5], zoom: 7.3 },
@@ -507,6 +507,43 @@ function calculatePolygonArea(coordinates) {
   let totalSqm = geodesicRingAreaSqm(coordinates[0]); // outer
   for (let h = 1; h < coordinates.length; h++) totalSqm -= geodesicRingAreaSqm(coordinates[h]); // holes
   return totalSqm / SQM_PER_ACRE; // acres
+}
+
+// Index features from PMTiles tiles to support viewport stats and acreage calculations
+function indexFeaturesFromTile(features = []) {
+  for (const f of features) {
+    const orchId = String(f.properties?.orch_id ?? f.properties?.ORCH_ID ?? f.properties?.id ?? '');
+    if (!orchId) continue;
+
+    // Centroid for viewport filtering
+    if (!centroidsById.has(orchId)) {
+      const c = polygonCentroid(f.geometry);
+      if (c) centroidsById.set(orchId, c);
+    }
+
+    // Area for acreage stats
+    if (!areaById.has(orchId)) {
+      // First try to use the 'acres' property from PMTiles
+      let area = f.properties?.acres ? Number(f.properties.acres) : 0;
+      
+      // Fallback to geodesic calculation if no acres property
+      if (area <= 0) {
+        if (f.geometry?.type === 'Polygon') area = calculatePolygonArea(f.geometry.coordinates);
+        else if (f.geometry?.type === 'MultiPolygon') {
+          for (const poly of f.geometry.coordinates) area += calculatePolygonArea(poly);
+        }
+      }
+      
+      if (area > 0) {
+        areaById.set(orchId, area);
+        const rows = rowsByOrch.get(orchId);
+        if (rows) rows.forEach(r => r.area_acres = area);
+      }
+    }
+  }
+  if (isViewportStatsEnabled() && typeof updateStatsFromRows === 'function') {
+    updateStatsFromRows();
+  }
 }
 
 // ============================
@@ -876,6 +913,7 @@ function makeTimeAgnosticLayer() {
   const layer = new deck.MVTLayer({
     id: `orchards-mvt-time-agnostic-${filtersHash}`,
     data: pmtilesUrl,
+    sourceLayer: 'orchards',
     uniqueIdProperty: 'orch_id',
     binary: false,
     minZoom: 6, maxZoom: 16,
@@ -885,7 +923,7 @@ function makeTimeAgnosticLayer() {
       console.log('📍 Current zoom:', map.getZoom(), 'Center:', map.getCenter());
     },
     onTileLoad: (tile) => {
-      console.log('🧩 Time-agnostic tile loaded:', tile.index, 'features:', tile.data?.features?.length || 0);
+      indexFeaturesFromTile(tile.data || []);
     },
     onTileError: (error) => {
       console.error('❌ Time-agnostic tile error:', error);
@@ -1341,8 +1379,22 @@ function makePMTilesLayer() {
     return true;
   }
   function fillFromRow(row) {
-    // Always use the cluster color (green / gray / brown), modulate alpha by confidence
     if (!row) return [255, 68, 68, 160]; // missing -> soft red
+<<<<<<< HEAD
+    
+    const conf = Number(row.best_soft_norm) || 0;
+    
+    // Use gray for uncertain orchards (≤15% confidence)
+    if (conf <= UNCERTAIN_THRESHOLD) {
+      const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 3))); // Scale uncertain opacity
+      return [80, 80, 80, alpha]; // Gray for uncertain
+    }
+    
+    // Use cluster color for confident classifications (green/brown)
+    const rgb = hexToRgb(row.cluster_role_color || '#808080') || [128, 128, 128];
+    const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 1.15)));
+    return [rgb[0], rgb[1], rgb[2], alpha];
+=======
     const conf = Number(row.best_soft_norm) || 0;
     // Uncertain classifications get gray fill
     if (conf <= UNCERTAIN_THRESHOLD) {
@@ -1352,16 +1404,21 @@ function makePMTilesLayer() {
     const [r, g, b] = hexToRgb(row.cluster_role_color || '#808080');
     const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 1.15)));
     return [r, g, b, alpha];
+>>>>>>> origin/main
   }
 
   const layer = new deck.MVTLayer({
     id: 'orchards-mvt',
     data: pmtilesUrl,
+    sourceLayer: 'orchards',
     uniqueIdProperty: 'orch_id',
     binary: false,
     minZoom: 6, maxZoom: 16,
     pickable: true,
     onDataLoad: (tj) => console.log('TileJSON loaded:', tj),
+    onTileLoad: (tile) => {
+      indexFeaturesFromTile(tile.data || []);
+    },
     onClick: info => {
       const f = info && info.object;
       if (!f) return;
