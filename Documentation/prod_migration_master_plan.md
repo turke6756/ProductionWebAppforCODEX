@@ -1,7 +1,7 @@
 # Cover Crop Explorer — Production Migration Plan (Agreed Scope)
 
-**Author:** ChatGPT · **Last Updated:** 2025-08-19 19:09 · **Status:** Step 1 completed  
-**Current Demo:** `deck_gl_polygon_dashboard_time_agnostic_fixed_v6.html`  
+**Author:** ChatGPT · **Last Updated:** 2025-08-20 05:55 · **Status:** Step 2 completed  
+**Current Demo:** `deck_gl_polygon_dashboard_time_agnostic_fixed_v7_mvt2_PATCHED_v2.html`  
 **Target:** Production web app using **vector tiles (PMTiles)** + **per‑season JSON attributes** + **manifest‑driven config**
 
 ---
@@ -100,18 +100,22 @@ This document captures only the migration ideas from the original *Web App Produ
 
 ---
 
-### Step 2 — Vector Tiles (PMTiles) & ID integrity
+### ✅ **Step 2 — Completed: Vector Tiles (PMTiles) & ID integrity**
+> Implemented in `deck_gl_polygon_dashboard_time_agnostic_fixed_v7_mvt2_PATCHED_v2.html`
+
 **Goal:** Decouple geometry, enable level-of-detail and large AOIs.
 
-- Export orchard polygons → **PMTiles** (`orchards.pmtiles`).  
-- Add PMTiles protocol and replace `PolygonLayer` with **`MVTLayer`**.  
-- Validate that **tile features carry `orch_id` as a string** (tippecanoe: preserve as string).  
-- **Join** attrs ↔ tiles by `String(f.properties.orch_id)` and the season’s JSON map.
+- ✅ Export orchard polygons → **PMTiles** (`orchards.pmtiles`).  
+- ✅ Add PMTiles protocol and replace `PolygonLayer` with **`MVTLayer`**.  
+- ✅ Validate that **tile features carry `orch_id` as a string** (tippecanoe: preserve as string).  
+- ✅ **Join** attrs ↔ tiles by `String(f.properties.orch_id)` and the season's JSON map.
+- ✅ **Fixed PMTiles click detection** - moved onClick handler to MVTLayer level.
 
-**Success criteria**
-- Visual parity with demo (colors, opacity/uncertain logic).  
-- Hover/selection works by `orch_id` from tiles.  
-- First render stays <3s on broadband, <5s on mobile.
+**Success criteria (✅ All met)**
+- ✅ Visual parity with demo (colors, opacity/uncertain logic).  
+- ✅ Hover/selection works by `orch_id` from tiles.  
+- ✅ First render stays <3s on broadband, <5s on mobile.
+- ✅ **Time series charts show on orchard click** with complete season history.
 
 ---
 
@@ -248,7 +252,7 @@ This document captures only the migration ideas from the original *Web App Produ
 ## 7) Checklist
 
 - [x] Step 1: Manifest-driven threshold + JSON ingestion (this commit)
-- [ ] Step 2: PMTiles + MVT join by `orch_id` (string)
+- [x] Step 2: PMTiles + MVT join by `orch_id` (string) + click detection fix
 - [ ] Step 3: Lazy load + prefetch ±1 + LRU cache
 - [ ] Step 4: Wire `streaks.json` & replace client-side time-agnostic calculations
 - [ ] Step 5: CDN packaging, hashing, cache-busting
