@@ -509,6 +509,37 @@ function calculatePolygonArea(coordinates) {
   return totalSqm / SQM_PER_ACRE; // acres
 }
 
+// Index features from PMTiles tiles to support viewport stats and acreage calculations
+function indexFeaturesFromTile(features = []) {
+  for (const f of features) {
+    const orchId = String(f.properties?.orch_id ?? f.properties?.ORCH_ID ?? f.properties?.id ?? '');
+    if (!orchId) continue;
+
+    // Centroid for viewport filtering
+    if (!centroidsById.has(orchId)) {
+      const c = polygonCentroid(f.geometry);
+      if (c) centroidsById.set(orchId, c);
+    }
+
+    // Area for acreage stats
+    if (!areaById.has(orchId)) {
+      let area = 0;
+      if (f.geometry?.type === 'Polygon') area = calculatePolygonArea(f.geometry.coordinates);
+      else if (f.geometry?.type === 'MultiPolygon') {
+        for (const poly of f.geometry.coordinates) area += calculatePolygonArea(poly);
+      }
+      if (area > 0) {
+        areaById.set(orchId, area);
+        const rows = rowsByOrch.get(orchId);
+        if (rows) rows.forEach(r => r.area_acres = area);
+      }
+    }
+  }
+  if (isViewportStatsEnabled() && typeof updateStatsFromRows === 'function') {
+    updateStatsFromRows();
+  }
+}
+
 // ============================
 // Time-agnostic analysis functions
 // ============================
@@ -886,6 +917,7 @@ function makeTimeAgnosticLayer() {
     },
     onTileLoad: (tile) => {
       console.log('🧩 Time-agnostic tile loaded:', tile.index, 'features:', tile.data?.features?.length || 0);
+      indexFeaturesFromTile(tile.data?.features || []);
     },
     onTileError: (error) => {
       console.error('❌ Time-agnostic tile error:', error);
@@ -1357,6 +1389,10 @@ function makePMTilesLayer() {
     minZoom: 6, maxZoom: 16,
     pickable: true,
     onDataLoad: (tj) => console.log('TileJSON loaded:', tj),
+    onTileLoad: (tile) => {
+      console.log('🧩 PMTiles tile loaded:', tile.index, 'features:', tile.data?.features?.length || 0);
+      indexFeaturesFromTile(tile.data?.features || []);
+    },
     onClick: info => {
       const f = info && info.object;
       if (!f) return;
