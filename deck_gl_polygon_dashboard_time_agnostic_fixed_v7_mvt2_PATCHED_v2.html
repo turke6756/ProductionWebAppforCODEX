@@ -1343,10 +1343,15 @@ function makePMTilesLayer() {
   function fillFromRow(row) {
     // Always use the cluster color (green / gray / brown), modulate alpha by confidence
     if (!row) return [255, 68, 68, 160]; // missing -> soft red
-    const rgb = hexToRgb(row.cluster_role_color || '#808080') || {r:128,g:128,b:128};
     const conf = Number(row.best_soft_norm) || 0;
+    // Uncertain classifications get gray fill
+    if (conf <= UNCERTAIN_THRESHOLD) {
+      const intensity = Math.max(0.5, conf * 3);
+      return [80, 80, 80, Math.floor(255 * intensity)];
+    }
+    const [r, g, b] = hexToRgb(row.cluster_role_color || '#808080');
     const alpha = Math.floor(255 * Math.max(0.35, Math.min(1, conf * 1.15)));
-    return [rgb.r, rgb.g, rgb.b, alpha];
+    return [r, g, b, alpha];
   }
 
   const layer = new deck.MVTLayer({
@@ -1384,7 +1389,10 @@ function makePMTilesLayer() {
         filled: true,
         lineWidthUnits: 'pixels',
         lineWidthMinPixels: CONFIG.lineWidth || 1,
-        getLineColor: [40, 40, 40],
+        getLineColor: f => {
+          const orchId = f.properties?.orch_id ?? f.properties?.ORCH_ID ?? f.properties?.id;
+          return String(orchId) === String(selectedOrchardId) ? [255, 255, 0, 255] : [40, 40, 40, 255];
+        },
         getLineWidth: f => {
           const orchId = f.properties?.orch_id ?? f.properties?.ORCH_ID ?? f.properties?.id;
           return String(orchId) === String(selectedOrchardId) ? 4 : (CONFIG.lineWidth || 1);
